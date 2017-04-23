@@ -1,0 +1,4 @@
+SmartStorageBox	KEYWORD1
+postWeight	KEYWORD2
+postRFID	KEYWORD2
+postActivity	KEYWORD2
