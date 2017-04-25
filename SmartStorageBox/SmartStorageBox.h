@@ -32,16 +32,20 @@
 
 #include "Arduino.h"
 
-class SmartStorageBox
-{
-  public:
+class SmartStorageBox {
+public:
     SmartStorageBox(String name, String host);
+
     bool postWeight(int weight);
+
     bool postRFID(String rfid);
+
     bool postActivity();
-  private:
+
+private:
     String _name;
     String _host;
+
     bool _post(String path, String data);
 };
 
