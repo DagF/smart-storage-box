@@ -109,7 +109,7 @@ void setup()   {
   display.clearDisplay();
   display.drawBitmap(1, 1,  protoboxLogo, 128, 64, 1);
   display.display();
-  delay(3000);
+  delay(500);
   display.clearDisplay();
 
   
@@ -169,7 +169,7 @@ void aks_init() {
   adxl.setActivityThreshold(75);      // 62.5mg per increment   // Set activity   // Inactivity thresholds (0-255)
 
   adxl.setInactivityXYZ(1, 0, 0);     // Set to detect inactivity in all the axes "adxl.setInactivityXYZ(X, Y, Z);" (1 == ON, 0 == OFF)
-  adxl.setInactivityThreshold(75);    // 62.5mg per increment   // Set inactivity // Inactivity thresholds (0-255)
+  adxl.setInactivityThreshold(25);    // 62.5mg per increment   // Set inactivity // Inactivity thresholds (0-255)
   adxl.setTimeInactivity(10);         // How many seconds of no activity is inactive?
 
   adxl.setTapDetectionOnXYZ(0, 0, 1); // Detect taps in the directions turned ON "adxl.setTapDetectionOnX(X, Y, Z);" (1 == ON, 0 == OFF)
@@ -222,7 +222,9 @@ display.clearDisplay();
       display.setTextSize(1);
       display.setTextColor(WHITE);
       display.setCursor(0,0);
-  
+  if(aks_get()){
+    blink(GREEN_LEDS, 1, 100);
+    }
   uint32_t bigNum;
   byte a,b,c,d;
   Wire.requestFrom(0x11, 15);
