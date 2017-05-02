@@ -28,5 +28,7 @@
 *.out
 *.app
 
+cmake-build-debug
+
 CMakeLists.txt
 .idea
