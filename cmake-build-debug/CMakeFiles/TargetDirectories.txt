@@ -1,0 +1,3 @@
+/home/dagfs/projects/fuzzy/smart-storage-box/cmake-build-debug/CMakeFiles/rebuild_cache.dir
+/home/dagfs/projects/fuzzy/smart-storage-box/cmake-build-debug/CMakeFiles/edit_cache.dir
+/home/dagfs/projects/fuzzy/smart-storage-box/cmake-build-debug/CMakeFiles/smart_storage_box.dir
