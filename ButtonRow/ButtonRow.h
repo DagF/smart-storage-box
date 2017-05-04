@@ -14,6 +14,8 @@ private:
     int _analogPin;
     int _analogButtonValues[16];
     int _analogButtonValuesLength;
+    int _last_button_pressed = -1;
+    unsigned long _last_button_pressed_time = 0;
 
 };
 

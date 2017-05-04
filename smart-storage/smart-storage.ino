@@ -30,7 +30,27 @@ int threshold = 10;
 ButtonRow buttonRow(A0, buttonValues, size, threshold);
 
 
-static const unsigned char PROGMEM protoboxLogo[] = {
+#define MENU_MAIN  1
+#define MENU_RFID  2
+#define MENU_WEIGHT 3
+#define MENU_INFO_CONTENT  4
+#define MENU_INFO_USE  5
+#define MENU_ACTIVE  6
+#define MENU_MAIN_INFO_CONTENT 7
+#define MENU_MAIN_INFO_USE 8
+
+int current_menu = MENU_MAIN;
+int prev_menu = MENU_MAIN;
+
+
+#define SENSOR_RESPONSE_NO_VALUE  0
+#define SENSOR_RESPONSE_WEIGHT_CHANGED  1
+#define SENSOR_RESPONSE_RFID_VALUE  2
+#define SENSOR_RESPONSE_ACTIVE 3
+
+
+static const unsigned char PROGMEM
+protoboxLogo[] = {
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 0x38, 0x70, 0x8F, 0x3E, 0xDC, 0xE0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -97,28 +117,23 @@ static const unsigned char PROGMEM protoboxLogo[] = {
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
+
 int GREEN_LEDS = D6;
 int RED_LEDS = D5;
 
-ESP8266WiFiMulti WiFiMulti;
-
-void setup() {
-
-    WiFiMulti.addAP("smart-storage", "smart-storage");
-
-
-    //AKSELEROMETER
-    aks_init();
-
-    //led lights
+void init_led() {
     pinMode(GREEN_LEDS, OUTPUT);
     pinMode(RED_LEDS, OUTPUT);
+}
 
-    // start serial communication
+void init_serial_communication() {
     Serial.begin(9600);
     Serial.println("ESP LOADING");
     Wire.begin(SDA, SCL);
-    //oled
+    Wire.setClockStretchLimit(15000);
+}
+
+void init_display() {
     display.begin(SSD1306_SWITCHCAPVCC, 0x3C);  // initialize with the I2C addr 0x3D (for the 128x64)
     display.clearDisplay();
     display.drawBitmap(1, 1, protoboxLogo, 128, 64, 1);
@@ -126,104 +141,137 @@ void setup() {
     delay(500);
     display.clearDisplay();
     display.display();
+}
 
+ESP8266WiFiMulti WiFiMulti;
 
+void init_wifi() {
+    WiFiMulti.addAP("smart-storage", "smart-storage");
+}
+
+void setup() {
+    init_acc();
+    init_led();
+    init_wifi();
+    init_display();
+    init_led();
+    init_serial_communication();
 }
 
 
-String menu_items[] = {
-        "Info About Content", "Info About Use"};
-int menu_length = 2;
 
-int in = 0;
-int last_button_pressed = -1;
-int time_to_button_pressed_reset = 0;
 
-uint32_t initial_weight = 0;
-
-void main_menu() {
+void clear_display() {
     display.clearDisplay();
+}
 
+void reset_text() {
     display.setTextSize(1);
     display.setTextColor(WHITE);
     display.setCursor(0, 0);
+}
+
+unsigned long weight = 0;
+unsigned long rfid = 0;
+
+int read_values_from_other_arduino() {
+    Wire.beginTransmission(9);
+    Wire.write(0);
+    Wire.endTransmission();
+    //Serial.println("Receive data");
+    Wire.requestFrom(9, 22);
+    String response = "";
+    while (Wire.available()) {
+        char b = Wire.read();
+        response += b;
+    }
+    String weightS = response.substring(2, 11);
+    String rfidS = response.substring(13, 22);
+    weight = weightS.toInt();
+    rfid = rfidS.toInt();
+    //Serial.print("w");  Serial.print(weight);  Serial.print("r");  Serial.println(rfid);
+    //Serial.println(response);
+    return SENSOR_RESPONSE_NO_VALUE;
+}
+
+/***
+ * Reads if box is acctive
+ * if active sends value to server and returns SENSOR_RESPONSE_ACTIVE
+ * @return SENSOR_RESPONSE_ACTIVE | SENSOR_RESPONSE_NO_VALUE
+ */
+int read_acc() {
+    int response = SENSOR_RESPONSE_NO_VALUE;
     if (aks_get()) {
+        Serial.println("acc");
         if ((WiFiMulti.run() == WL_CONNECTED)) {
             box.postActivity();
             blink(RED_LEDS, 1, 100);
+            response = SENSOR_RESPONSE_ACTIVE;
         }
         blink(GREEN_LEDS, 1, 100);
     }
+    return response;
+}
 
-    // todo move to function
-    uint32_t weight, rfid;
-    weight = Wire.read();
-    weight = (weight << 8) | Wire.read();
-    weight = (weight << 8) | Wire.read();
-    weight = (weight << 8) | Wire.read();
-    Serial.print("weight: ");
-    Serial.print(weight);
-    Serial.print("\n");
-    int treshhold = 5;
-    if ((weight < initial_weight - treshhold) || (weight > initial_weight + treshhold)) {
-
-        if ((WiFiMulti.run() == WL_CONNECTED)) {
-            initial_weight = weight;
-            //box.postWeight(weight);
-        }
+/***
+ * Reads values from sensors.
+ * Reading triggers sending data to the server
+ * @return SENSOR_RESPONSE_*
+ */
+int manage_sensors() {
+    int response = SENSOR_RESPONSE_NO_VALUE;
+    response = read_acc();
+    int other_arduino_sensors_response = read_values_from_other_arduino();
+    if (response == SENSOR_RESPONSE_NO_VALUE) {
+        response = other_arduino_sensors_response;
     }
+    return response;
+}
 
-    rfid = Wire.read();
-    rfid = (rfid << 8) | Wire.read();
-    rfid = (rfid << 8) | Wire.read();
-    rfid = (rfid << 8) | Wire.read();
-    Serial.print("rfid: ");
-    Serial.print(rfid);
-    Serial.print("\n");
+#define MENU_MAIN_OPTION_INFO_CONTENT 0
+#define MENU_MAIN_OPTION_INFO_USE 1
+String menu_items[] = {
+        "Info About Content", "Info About Use"};
+int menu_length = 2;
+int in = 0;
 
-    if (rfid > 0) {
+void main_menu() {
+    clear_display();
+    reset_text();
 
-        if ((WiFiMulti.run() == WL_CONNECTED)) {
-            //box.postRFID(String(rfid));
-        }
-    }
 
-    //todo collect the rfid and send it to server
-
-    Wire.requestFrom(0x11, 8);
-    Serial.println("\n rfid: ");
-    while (Wire.available()) { // slave may send less than requested
-        char c = Wire.read(); // receive a byte as character
-        Serial.print(c);         // print the character
-    }
-//TODO remeber last button clicked for some time to prevent dubble action on single click but keep responsveness
-    int button_pressed = buttonRow.getPushedButton();
-    if (button_pressed != last_button_pressed || time_to_button_pressed_reset < 1) {
-
-        last_button_pressed = button_pressed;
-        time_to_button_pressed_reset = 3;
-        switch (button_pressed) {
-            case OK:
-                blink(GREEN_LEDS, 5, 100);
-
-                break;
-            case BACK:
-                blink(RED_LEDS, 5, 300);
-                break;
-            case UP:
-                if (in > 0) {
-                    in--;
-                }
-                break;
-            case DOWN:
-              if(in < menu_length - 1){
+//TODO move code for better button click feeling into library with delay in cycles as input
+    switch (buttonRow.getPushedButton()) {
+        case OK:
+            blink(GREEN_LEDS, 5, 100);
+            switch (in){
+                case MENU_MAIN_OPTION_INFO_CONTENT:
+                    prev_menu = current_menu;
+                    current_menu = MENU_MAIN_INFO_CONTENT;
+                    break;
+                case MENU_MAIN_OPTION_INFO_USE:
+                    prev_menu = current_menu;
+                    current_menu = MENU_MAIN_INFO_CONTENT;
+                    break;
+            }
+            break;
+        case BACK:
+            blink(RED_LEDS, 5, 300);
+            //TODO reset menu values
+            break;
+        case UP:
+            if (in > 0) {
+                in--;
+            }
+            break;
+        case DOWN:
+            if (in < menu_length - 1) {
                 in++;
-              }
-                break;
-            case RESET:
-                //reset
-                break;
-        }
+            }
+            break;
+        case RESET:
+            //reset
+            break;
     }
     int line = 0;
     for (int i = in; i < menu_length; i++) {
@@ -232,17 +280,83 @@ void main_menu() {
         line++;
 
     }
-    if (time_to_button_pressed_reset > 0) {
-
-        time_to_button_pressed_reset--;
-    }
     display.display();
-    delay(10);
 }
 
 
+unsigned long menu_start = 0;
+
+void active_menu() {
+    clear_display();
+    reset_text();
+    display.print("Hey! Who moved me?");
+    display.display();
+    if ((millis() - menu_start) > 2000) {
+        current_menu = prev_menu;
+    }
+}
+
+
+void main_menu_info_content(){
+    clear_display();
+    reset_text();
+    display.print("Hey! Who moved me?");
+    display.display();
+    switch (buttonRow.getPushedButton()) {
+        case BACK:current_menu = prev_menu;
+            break;
+    }
+}
+void main_menu_info_use(){
+    clear_display();
+    reset_text();
+    display.print("Hey! Who moved me?");
+    display.display();
+    switch (buttonRow.getPushedButton()) {
+        case BACK:current_menu = prev_menu;
+            break;
+    }
+}
 void loop() {
-main_menu();
+//TODO loop til connected to wifi with text connecting to network
+
+    int sensor_response = manage_sensors();
+    if (sensor_response != SENSOR_RESPONSE_NO_VALUE) {
+        prev_menu = current_menu;
+        if (sensor_response == SENSOR_RESPONSE_ACTIVE) {
+            current_menu = MENU_ACTIVE;
+            menu_start = millis();
+        }
+        if (sensor_response == SENSOR_RESPONSE_RFID_VALUE) {
+            current_menu = MENU_RFID;
+        }
+        if (sensor_response == SENSOR_RESPONSE_WEIGHT_CHANGED) {
+            current_menu = MENU_WEIGHT;
+        }
+    }
+    switch (current_menu) {
+        case MENU_MAIN:
+            main_menu();
+            break;
+        case MENU_MAIN_INFO_CONTENT:
+            main_menu_info_content();
+            break;
+        case MENU_MAIN_INFO_USE:
+            main_menu_info_use();
+            break;
+        case MENU_ACTIVE:
+            active_menu();
+            break;
+        case MENU_RFID:
+            active_rfid();
+            break;
+        case MENU_WEIGHT:
+            active_weight();
+            break;
+        default:
+            main_menu();
+    }
+
 }
 
 boolean aks_get() {
@@ -283,7 +397,7 @@ boolean aks_get() {
 }
 
 //AKS
-void aks_init() {
+void init_acc() {
     adxl.powerOn();                     // Power on the ADXL345
 
     adxl.setRangeSetting(16);           // Give the range settings
@@ -331,12 +445,35 @@ void aks_init() {
     adxl.singleTapINT(1);
 }
 
+
+int blink_color = 0;
+int blinks_left = 0;
+int blink_count = 0;
+int blink_delay = 0;
+unsigned long blink_start = 0;
+
 void blink(int pin, int times, int d) {
-    for (int j = 0; j < times; j++) {
+    blink_color = pin;
+    blinks_left = times;
+    blink_count = 0;
+    blink_delay = d;
+    blink_start = millis();
+}
+
+void update_blink() {
+    unsigned long now = millis();
+    if (blinks_left > 0) {
+        //on
+        if (blink_delay < (now - (blink_count * 2 * blink_delay)) - blink_start) {
+            digitalWrite(pin, HIGH);
+            blink_count++;
+            blinks_left--;
+        }
+            //off
+        else if (blink_delay < (now - ((blink_count * 2 - 1) * blink_delay)) - blink_start) {
+            digitalWrite(pin, LOW);
+        }
+    } else {
         digitalWrite(pin, LOW);
-        delay(d);
-        digitalWrite(pin, HIGH);
-        delay(d);
     }
-    digitalWrite(pin, LOW);
 }
