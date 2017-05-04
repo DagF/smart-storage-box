@@ -202,13 +202,12 @@ int read_values_from_other_arduino() {
 int read_acc() {
     int response = SENSOR_RESPONSE_NO_VALUE;
     if (aks_get()) {
-        Serial.println("acc");
         if ((WiFiMulti.run() == WL_CONNECTED)) {
-            box.postActivity();
+            //box.postActivity();
             blink(RED_LEDS, 1, 100);
-            response = SENSOR_RESPONSE_ACTIVE;
         }
-        blink(GREEN_LEDS, 1, 100);
+            response = SENSOR_RESPONSE_ACTIVE;
+        blink(GREEN_LEDS, 2, 100);
     }
     return response;
 }
@@ -225,6 +224,7 @@ int manage_sensors() {
     if (response == SENSOR_RESPONSE_NO_VALUE) {
         response = other_arduino_sensors_response;
     }
+    
     return response;
 }
 
@@ -251,7 +251,7 @@ void main_menu() {
                     break;
                 case MENU_MAIN_OPTION_INFO_USE:
                     prev_menu = current_menu;
-                    current_menu = MENU_MAIN_INFO_CONTENT;
+                    current_menu = MENU_MAIN_INFO_USE;
                     break;
             }
             break;
@@ -274,8 +274,14 @@ void main_menu() {
             break;
     }
     int line = 0;
-    for (int i = in; i < menu_length; i++) {
+    for (int i = 0; i < menu_length; i++) {
         display.setCursor(0, 10 * line);
+        if(i == in){
+            display.print(">");
+        }
+        else {
+            display.print(" ");
+        }
         display.print(menu_items[i]);
         line++;
 
@@ -286,10 +292,31 @@ void main_menu() {
 
 unsigned long menu_start = 0;
 
-void active_menu() {
+void active_menu() {        
     clear_display();
     reset_text();
     display.print("Hey! Who moved me?");
+    display.display();
+    if ((millis() - menu_start) > 2000) {
+        current_menu = prev_menu;
+    }
+}
+
+void rfid_menu() {
+    clear_display();
+    reset_text();
+    display.print("RFID");
+    display.display();
+    
+    if ((millis() - menu_start) > 2000) {
+        current_menu = prev_menu;
+    }
+}
+
+void weight_menu() {
+    clear_display();
+    reset_text();
+    display.print("weight");
     display.display();
     if ((millis() - menu_start) > 2000) {
         current_menu = prev_menu;
@@ -300,7 +327,8 @@ void active_menu() {
 void main_menu_info_content(){
     clear_display();
     reset_text();
-    display.print("Hey! Who moved me?");
+    display.print("Contact information:");
+    display.setCursor(0, 10);
     display.display();
     switch (buttonRow.getPushedButton()) {
         case BACK:current_menu = prev_menu;
@@ -310,7 +338,7 @@ void main_menu_info_content(){
 void main_menu_info_use(){
     clear_display();
     reset_text();
-    display.print("Hey! Who moved me?");
+    display.print("info use");
     display.display();
     switch (buttonRow.getPushedButton()) {
         case BACK:current_menu = prev_menu;
@@ -318,27 +346,41 @@ void main_menu_info_use(){
     }
 }
 void loop() {
+  update_blink();
 //TODO loop til connected to wifi with text connecting to network
 
     int sensor_response = manage_sensors();
     if (sensor_response != SENSOR_RESPONSE_NO_VALUE) {
-        prev_menu = current_menu;
+      int next_menu = -1;
         if (sensor_response == SENSOR_RESPONSE_ACTIVE) {
-            current_menu = MENU_ACTIVE;
-            menu_start = millis();
+           next_menu = MENU_ACTIVE;
+           Serial.println("acc menu");
         }
         if (sensor_response == SENSOR_RESPONSE_RFID_VALUE) {
-            current_menu = MENU_RFID;
+            next_menu = MENU_RFID;
         }
         if (sensor_response == SENSOR_RESPONSE_WEIGHT_CHANGED) {
-            current_menu = MENU_WEIGHT;
+            next_menu = MENU_WEIGHT;
+        }
+        if(current_menu != next_menu){
+          
+          prev_menu = current_menu;
+          current_menu = next_menu;
+            menu_start = millis();
         }
     }
+    
+    clear_display();
+    reset_text();
+    display.print(weight);
+    display.display();
+    /*
     switch (current_menu) {
         case MENU_MAIN:
             main_menu();
             break;
         case MENU_MAIN_INFO_CONTENT:
+        
             main_menu_info_content();
             break;
         case MENU_MAIN_INFO_USE:
@@ -348,14 +390,14 @@ void loop() {
             active_menu();
             break;
         case MENU_RFID:
-            active_rfid();
+            rfid_menu();
             break;
         case MENU_WEIGHT:
-            active_weight();
+            weight_menu();
             break;
         default:
             main_menu();
-    }
+    }*/
 
 }
 
@@ -412,7 +454,7 @@ void init_acc() {
 
     adxl.setActivityXYZ(1, 0,
                         0);       // Set to activate movement detection in the axes "adxl.setActivityXYZ(X, Y, Z);" (1 == ON, 0 == OFF)
-    adxl.setActivityThreshold(75);      // 62.5mg per increment   // Set activity   // Inactivity thresholds (0-255)
+    adxl.setActivityThreshold(25);      // 62.5mg per increment   // Set activity   // Inactivity thresholds (0-255)
 
     adxl.setInactivityXYZ(1, 0,
                           0);     // Set to detect inactivity in all the axes "adxl.setInactivityXYZ(X, Y, Z);" (1 == ON, 0 == OFF)
@@ -463,17 +505,28 @@ void blink(int pin, int times, int d) {
 void update_blink() {
     unsigned long now = millis();
     if (blinks_left > 0) {
-        //on
-        if (blink_delay < (now - (blink_count * 2 * blink_delay)) - blink_start) {
-            digitalWrite(pin, HIGH);
+      Serial.print("diff: ");
+      Serial.println((now - blink_start));
+      Serial.print("off: ");
+      Serial.println((blink_count * 2 - 1) * blink_delay);
+      Serial.print("on: ");
+      Serial.println((blink_count * 2) * blink_delay);
+
+      
+     
+        if (((blink_count * 2) * blink_delay) < (now - blink_start)) {
+            digitalWrite(blink_color, HIGH);
+           Serial.println("on");
             blink_count++;
             blinks_left--;
         }
-            //off
-        else if (blink_delay < (now - ((blink_count * 2 - 1) * blink_delay)) - blink_start) {
-            digitalWrite(pin, LOW);
+        else  if (((blink_count * 2 - 1) * blink_delay) < (now - blink_start)) {
+            digitalWrite(blink_color, LOW);
+           Serial.println("of");
         }
+         
     } else {
-        digitalWrite(pin, LOW);
+           Serial.println("offf");
+        digitalWrite(blink_color, LOW);
     }
 }

@@ -17,8 +17,8 @@ int ButtonRow::getPushedButton() {
     _sensorValue = analogRead(_analogPin);
     for (int i = 0; i < _analogButtonValuesLength; i++) {
         if (_sensorValue < _analogButtonValues[i] + _threshold && _sensorValue > _analogButtonValues[i] - _threshold) {
-            if (last_button_pressed != i || millis() - _last_button_pressed_time > 30) {
-                _last_button_presed = i;
+            if (_last_button_pressed != i || millis() - _last_button_pressed_time > 30) {
+                _last_button_pressed = i;
                 _last_button_pressed_time = millis();
                 return i;
             }
