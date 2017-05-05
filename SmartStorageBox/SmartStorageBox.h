@@ -38,7 +38,7 @@ public:
 
     bool postWeight(int weight);
 
-    bool postRFID(String rfid);
+    bool postRFID(int rfid);
 
     bool postActivity();
 

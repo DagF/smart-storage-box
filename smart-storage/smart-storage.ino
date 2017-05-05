@@ -272,7 +272,7 @@ unsigned long diff = 0;
 
             
             response = SENSOR_RESPONSE_WEIGHT_CHANGED;
-            //box.pushWeight(weight);
+            box.postWeight(weight);
         }
      
     }
@@ -288,7 +288,7 @@ unsigned long diff = 0;
               tool_present[i] = !tool_present[i];
             }
         }
-        //box.pushRFID(rfid);
+        box.postRFID(rfid);
         response = SENSOR_RESPONSE_RFID_VALUE;
     }
 
@@ -306,8 +306,7 @@ int read_acc() {
     int response = SENSOR_RESPONSE_NO_VALUE;
     if (aks_get()) {
         if ((WiFiMulti.run() == WL_CONNECTED)) {
-            //box.postActivity();
-            blink(RED_LEDS, 1, 100);
+            box.postActivity();
         }
         response = SENSOR_RESPONSE_ACTIVE;
         last_active = millis();
