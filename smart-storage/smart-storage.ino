@@ -29,6 +29,7 @@ int size = sizeof(buttonValues) / sizeof(buttonValues[0]);
 int threshold = 10;
 ButtonRow buttonRow(A0, buttonValues, size, threshold);
 
+bool popup_active = false;
 
 #define MENU_MAIN  1
 #define MENU_RFID  2
@@ -38,6 +39,7 @@ ButtonRow buttonRow(A0, buttonValues, size, threshold);
 #define MENU_ACTIVE  6
 #define MENU_MAIN_INFO_CONTENT 7
 #define MENU_MAIN_INFO_USE 8
+#define MENU_MAIN_INFO_WEIGHT 9
 
 int current_menu = MENU_MAIN;
 int prev_menu = MENU_MAIN;
@@ -47,6 +49,10 @@ int prev_menu = MENU_MAIN;
 #define SENSOR_RESPONSE_WEIGHT_CHANGED  1
 #define SENSOR_RESPONSE_RFID_VALUE  2
 #define SENSOR_RESPONSE_ACTIVE 3
+
+String user_names[] = {"Dag", "Sivert", "Thomesine"};
+unsigned long user_rfid[] = {4294938465,1,1};
+String last_used_by = user_names[0];
 
 
 static const unsigned char PROGMEM
@@ -159,8 +165,6 @@ void setup() {
 }
 
 
-
-
 void clear_display() {
     display.clearDisplay();
 }
@@ -172,26 +176,60 @@ void reset_text() {
 }
 
 unsigned long weight = 0;
+unsigned long weights[10] = {0,0,0,0,0,0,0,0,0,0};
+int weight_counter = 0;
 unsigned long rfid = 0;
+unsigned long last_rfid = 0;
 
 int read_values_from_other_arduino() {
+    int response = SENSOR_RESPONSE_NO_VALUE;
     Wire.beginTransmission(9);
     Wire.write(0);
     Wire.endTransmission();
     //Serial.println("Receive data");
     Wire.requestFrom(9, 22);
-    String response = "";
+    String data = "";
     while (Wire.available()) {
         char b = Wire.read();
-        response += b;
+        data += b;
     }
-    String weightS = response.substring(2, 11);
-    String rfidS = response.substring(13, 22);
-    weight = weightS.toInt();
+      Serial.println(data);
+    String weightS = data.substring(2, 11);
+    String rfidS = data.substring(13, 22);
+    unsigned long weight_tmp = weightS.toInt();
+    if(weight_counter < 10){
+        weights[weight_counter] = weight_tmp;
+        weight_counter++;
+    } else {
+        unsigned long sum_weight = 0;
+        for(int i = 0; i < 10; i++){
+            sum_weight = sum_weight + weights[i];
+        }
+        weight_tmp = sum_weight / 10;
+        weight_counter = 0;
+    }
     rfid = rfidS.toInt();
-    //Serial.print("w");  Serial.print(weight);  Serial.print("r");  Serial.println(rfid);
-    //Serial.println(response);
-    return SENSOR_RESPONSE_NO_VALUE;
+    if(rfid > 0){
+      Serial.println(rfid);
+        last_rfid = rfid;
+        //box.pushRFID(rfid);
+        response = SENSOR_RESPONSE_RFID_VALUE;
+    }
+    
+    if(weight_tmp > weight){
+        if(weight_tmp - weight > 7000){
+            weight = weight_tmp;
+            //box.pushWeight(weight);
+            response = SENSOR_RESPONSE_WEIGHT_CHANGED;
+        }
+    } else if(weight_tmp < weight){
+        if(weight - weight_tmp > 7000){
+            weight = weight_tmp;
+            //box.pushWeight(weight);
+            response = SENSOR_RESPONSE_WEIGHT_CHANGED;
+        }
+    }
+    return response;
 }
 
 /***
@@ -199,6 +237,8 @@ int read_values_from_other_arduino() {
  * if active sends value to server and returns SENSOR_RESPONSE_ACTIVE
  * @return SENSOR_RESPONSE_ACTIVE | SENSOR_RESPONSE_NO_VALUE
  */
+unsigned long last_active = millis();
+
 int read_acc() {
     int response = SENSOR_RESPONSE_NO_VALUE;
     if (aks_get()) {
@@ -206,7 +246,8 @@ int read_acc() {
             //box.postActivity();
             blink(RED_LEDS, 1, 100);
         }
-            response = SENSOR_RESPONSE_ACTIVE;
+        response = SENSOR_RESPONSE_ACTIVE;
+        last_active = millis();
         blink(GREEN_LEDS, 2, 100);
     }
     return response;
@@ -224,15 +265,15 @@ int manage_sensors() {
     if (response == SENSOR_RESPONSE_NO_VALUE) {
         response = other_arduino_sensors_response;
     }
-    
     return response;
 }
 
 #define MENU_MAIN_OPTION_INFO_CONTENT 0
 #define MENU_MAIN_OPTION_INFO_USE 1
+#define MENU_MAIN_OPTION_INFO_WEIGHT 2
 String menu_items[] = {
-        "Info About Content", "Info About Use"};
-int menu_length = 2;
+        "Info About Content", "Info About Use", "Weight raw"};
+int menu_length = 3;
 int in = 0;
 
 void main_menu() {
@@ -244,14 +285,21 @@ void main_menu() {
     switch (buttonRow.getPushedButton()) {
         case OK:
             blink(GREEN_LEDS, 5, 100);
-            switch (in){
+            switch (in) {
                 case MENU_MAIN_OPTION_INFO_CONTENT:
                     prev_menu = current_menu;
                     current_menu = MENU_MAIN_INFO_CONTENT;
+       
                     break;
                 case MENU_MAIN_OPTION_INFO_USE:
                     prev_menu = current_menu;
                     current_menu = MENU_MAIN_INFO_USE;
+      
+                    break;
+                case MENU_MAIN_OPTION_INFO_WEIGHT:
+                    prev_menu = current_menu;
+                    current_menu = MENU_MAIN_INFO_WEIGHT;
+        
                     break;
             }
             break;
@@ -276,10 +324,9 @@ void main_menu() {
     int line = 0;
     for (int i = 0; i < menu_length; i++) {
         display.setCursor(0, 10 * line);
-        if(i == in){
+        if (i == in) {
             display.print(">");
-        }
-        else {
+        } else {
             display.print(" ");
         }
         display.print(menu_items[i]);
@@ -289,16 +336,17 @@ void main_menu() {
     display.display();
 }
 
-
+int prev_menu_active =0;
 unsigned long menu_start = 0;
 
-void active_menu() {        
+void active_menu() {
     clear_display();
     reset_text();
     display.print("Hey! Who moved me?");
     display.display();
     if ((millis() - menu_start) > 2000) {
-        current_menu = prev_menu;
+        current_menu = prev_menu_active;
+        popup_active = false;
     }
 }
 
@@ -307,9 +355,10 @@ void rfid_menu() {
     reset_text();
     display.print("RFID");
     display.display();
-    
+
     if ((millis() - menu_start) > 2000) {
         current_menu = prev_menu;
+        popup_active = false;
     }
 }
 
@@ -319,42 +368,80 @@ void weight_menu() {
     display.print("weight");
     display.display();
     if ((millis() - menu_start) > 2000) {
-        current_menu = prev_menu;
+        current_menu = prev_menu_active;
+        popup_active = false;
     }
 }
 
-
-void main_menu_info_content(){
+String tools[] = {"Hammer", "Saw", "Tape"};
+unsigned long tool_weight[] = {300, 200, 80};
+bool tool_present[] ={true, false, true};
+unsigned long tools_rfid[] = {1,1,1};
+void main_menu_info_content() {
     clear_display();
     reset_text();
-    display.print("Contact information:");
-    display.setCursor(0, 10);
+    display.print("Tools:");
+    int ind = 1;
+    for(int i = 0; i < 3; i++){
+        if(tool_present[i]){
+            display.setCursor(0, (ind) * 10);
+            display.print(tools[i]);
+            ind++;
+        }
+    }
     display.display();
     switch (buttonRow.getPushedButton()) {
-        case BACK:current_menu = prev_menu;
+        case BACK:
+            current_menu = prev_menu;
             break;
     }
 }
-void main_menu_info_use(){
+
+void main_menu_info_use() {
     clear_display();
     reset_text();
-    display.print("info use");
+    display.print("Contact information:");
+    display.setCursor(0, 20);
+    display.print("Name: Sivert");
+    display.setCursor(0, 30);
+    display.print("TLF: 815 493 00");
+    display.setCursor(0, 40);
+    unsigned long last_used = (millis() - last_active) / (1000);
+    display.print("Last used: ");
+    display.print(last_used);
+    display.print(" s");
+    display.setCursor(0, 50);
+    display.print("Last used by:: ");
+    display.print(last_used_by);
     display.display();
     switch (buttonRow.getPushedButton()) {
-        case BACK:current_menu = prev_menu;
+        case BACK:
+            current_menu = prev_menu;
+            break;
+    }
+}
+
+void main_menu_weight(){
+
+    clear_display();
+    reset_text();
+    display.print(weight);
+    display.display();
+    switch (buttonRow.getPushedButton()) {
+        case BACK:
+            current_menu = prev_menu;
             break;
     }
 }
 void loop() {
-  update_blink();
+    update_blink();
 //TODO loop til connected to wifi with text connecting to network
 
     int sensor_response = manage_sensors();
     if (sensor_response != SENSOR_RESPONSE_NO_VALUE) {
-      int next_menu = -1;
+        int next_menu = current_menu;
         if (sensor_response == SENSOR_RESPONSE_ACTIVE) {
-           next_menu = MENU_ACTIVE;
-           Serial.println("acc menu");
+            next_menu = MENU_ACTIVE;
         }
         if (sensor_response == SENSOR_RESPONSE_RFID_VALUE) {
             next_menu = MENU_RFID;
@@ -362,25 +449,20 @@ void loop() {
         if (sensor_response == SENSOR_RESPONSE_WEIGHT_CHANGED) {
             next_menu = MENU_WEIGHT;
         }
-        if(current_menu != next_menu){
-          
-          prev_menu = current_menu;
-          current_menu = next_menu;
+        if (!popup_active) {
+            popup_active = true;
+            prev_menu_active = current_menu;
+            current_menu = next_menu;
             menu_start = millis();
         }
     }
-    
-    clear_display();
-    reset_text();
-    display.print(weight);
-    display.display();
-    /*
+
     switch (current_menu) {
         case MENU_MAIN:
             main_menu();
             break;
         case MENU_MAIN_INFO_CONTENT:
-        
+       
             main_menu_info_content();
             break;
         case MENU_MAIN_INFO_USE:
@@ -395,9 +477,12 @@ void loop() {
         case MENU_WEIGHT:
             weight_menu();
             break;
+        case MENU_MAIN_INFO_WEIGHT:
+            main_menu_weight();
+            break;
         default:
             main_menu();
-    }*/
+    }
 
 }
 
@@ -505,28 +590,17 @@ void blink(int pin, int times, int d) {
 void update_blink() {
     unsigned long now = millis();
     if (blinks_left > 0) {
-      Serial.print("diff: ");
-      Serial.println((now - blink_start));
-      Serial.print("off: ");
-      Serial.println((blink_count * 2 - 1) * blink_delay);
-      Serial.print("on: ");
-      Serial.println((blink_count * 2) * blink_delay);
 
-      
-     
+
         if (((blink_count * 2) * blink_delay) < (now - blink_start)) {
             digitalWrite(blink_color, HIGH);
-           Serial.println("on");
             blink_count++;
             blinks_left--;
-        }
-        else  if (((blink_count * 2 - 1) * blink_delay) < (now - blink_start)) {
+        } else if (((blink_count * 2 - 1) * blink_delay) < (now - blink_start)) {
             digitalWrite(blink_color, LOW);
-           Serial.println("of");
         }
-         
+
     } else {
-           Serial.println("offf");
         digitalWrite(blink_color, LOW);
     }
 }
