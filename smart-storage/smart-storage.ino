@@ -54,8 +54,8 @@ String user_names[] = {"Dag", "Sivert", "Thomesine"};
 unsigned long user_rfid[] = {294938465,1,1};
 String last_used_by = user_names[0];
 
-String tools[] = {"Hammer", "Saw", "Tape"};
-unsigned long tool_weight[] = {300, 200, 80};
+String tools[] = {"Hammer", "caliper", "Tape"};
+unsigned long tool_weight[] = {300, 8000, 80};
 bool tool_present[] ={true, false, true};
 unsigned long tools_rfid[] = {19360,1,1};
 
@@ -181,10 +181,12 @@ void reset_text() {
 }
 
 unsigned long weight = 0;
-unsigned long weights[10] = {0,0,0,0,0,0,0,0,0,0};
+unsigned long prev_weight = 0;
+unsigned long weights[50] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
 int weight_counter = 0;
 unsigned long rfid = 0;
 unsigned long last_rfid = 0;
+unsigned long last_weight_time = 0;
 
 int read_values_from_other_arduino() {
     int response = SENSOR_RESPONSE_NO_VALUE;
@@ -200,9 +202,36 @@ int read_values_from_other_arduino() {
     }
     String weightS = data.substring(2, 11);
     String rfidS = data.substring(13, 22);
+    
     unsigned long weight_tmp = weightS.toInt();
+      //Serial.print("tp ");
+      //Serial.println(weight_tmp);
+      //Serial.print("last ");
+      //Serial.println(weights[weight_counter]);
+                //Serial.println( weight_tmp);
+   if(millis() - last_weight_time > 100){
     if(weight_counter < 10){
+      if(weight_counter == 0){
         weights[weight_counter] = weight_tmp;
+      }else if( weight_tmp > weights[weight_counter-1]){
+            if((weight_tmp - weights[weight_counter-1]) > 1000){
+                // Serial.println("rese1t1");
+                // Serial.println(weight_tmp - weights[weight_counter]);
+               weight_counter  = 0;
+              }
+          }
+          else if(weights[weight_counter-1]> weight_tmp ){
+            
+            if((weights[weight_counter-1] - weight_tmp) > 1000){
+              //  Serial.println("reset2");
+               // Serial.println(weights[weight_counter-1] - weight_tmp);
+                weight_counter  = 0;
+              }
+          }
+        last_weight_time = millis();
+        weights[weight_counter] = weight_tmp;
+               // Serial.println( weights[weight_counter]);
+                //Serial.println( weight_tmp);
         weight_counter++;
     } else {
         unsigned long sum_weight = 0;
@@ -211,7 +240,44 @@ int read_values_from_other_arduino() {
         }
         weight_tmp = sum_weight / 10;
         weight_counter = 0;
+        if(weight_tmp > weight && (weight_tmp - weight) > 1000 || weight_tmp < weight && (weight-weight_tmp) > 1000){
+         //  Serial.println(weight);
+     // Serial.println(weight_tmp);
+          prev_weight = weight;
+            weight = weight_tmp;
+unsigned long diff = 0;
+    if(prev_weight > weight){
+       diff = prev_weight - weight;      
+    } else if (prev_weight < weight){
+      diff = weight - prev_weight;      
     }
+        
+        for(int i = 0; i < 3; i++){
+          if(tool_weight[i] > diff - 1000 && tool_weight[i] < diff + 1000 ){
+            if(prev_weight > weight){
+         tool_present[i] = false;
+        
+      } else if (prev_weight < weight){
+        tool_present[i] = true;
+      }
+
+            break; 
+          }
+        }
+      
+      
+      
+      
+
+
+            
+            response = SENSOR_RESPONSE_WEIGHT_CHANGED;
+            //box.pushWeight(weight);
+        }
+     
+    }
+   }
+    
     rfid = rfidS.toInt();
     if(rfid > 0){
       Serial.println(rfid);
@@ -225,20 +291,7 @@ int read_values_from_other_arduino() {
         //box.pushRFID(rfid);
         response = SENSOR_RESPONSE_RFID_VALUE;
     }
-    
-    if(weight_tmp > weight){
-        if(weight_tmp - weight > 7000){
-            weight = weight_tmp;
-            //box.pushWeight(weight);
-            response = SENSOR_RESPONSE_WEIGHT_CHANGED;
-        }
-    } else if(weight_tmp < weight){
-        if(weight - weight_tmp > 7000){
-            weight = weight_tmp;
-            //box.pushWeight(weight);
-            response = SENSOR_RESPONSE_WEIGHT_CHANGED;
-        }
-    }
+
     return response;
 }
 
@@ -392,15 +445,47 @@ void rfid_menu() {
     display.display();
 
     if ((millis() - menu_start) > 2000) {
-        current_menu = prev_menu;
+        current_menu = prev_menu_active;
         popup_active = false;
     }
 }
 
+
+/*
+
+String tools[] = {"Hammer", "caliper", "Tape"};
+unsigned long tool_weight[] = {300, 8000, 80};
+bool tool_present[] ={true, true, true};
+unsigned long tools_rfid[] = {19360,1,1};
+*/
 void weight_menu() {
     clear_display();
     reset_text();
-    display.print("weight");
+    unsigned long diff = 0;
+    display.println("weight");
+    if(prev_weight > weight){
+       diff = prev_weight - weight;
+    display.print(diff);
+    display.println("g removed");
+       
+      
+    } else if (prev_weight < weight){
+      diff = weight - prev_weight;
+    display.print(diff);
+    display.println("g added");
+      
+    }
+    
+    if(diff > 2000){
+      
+      for(int i = 0; i < 3; i++){
+        if(tool_weight[i] > diff - 1000 && tool_weight[i] < diff + 1000 ){
+          
+          display.println(tools[i]);
+          break; 
+        }
+      }
+    }
     display.display();
     if ((millis() - menu_start) > 2000) {
         current_menu = prev_menu_active;
