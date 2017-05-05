@@ -51,8 +51,13 @@ int prev_menu = MENU_MAIN;
 #define SENSOR_RESPONSE_ACTIVE 3
 
 String user_names[] = {"Dag", "Sivert", "Thomesine"};
-unsigned long user_rfid[] = {4294938465,1,1};
+unsigned long user_rfid[] = {294938465,1,1};
 String last_used_by = user_names[0];
+
+String tools[] = {"Hammer", "Saw", "Tape"};
+unsigned long tool_weight[] = {300, 200, 80};
+bool tool_present[] ={true, false, true};
+unsigned long tools_rfid[] = {19360,1,1};
 
 
 static const unsigned char PROGMEM
@@ -193,7 +198,6 @@ int read_values_from_other_arduino() {
         char b = Wire.read();
         data += b;
     }
-      Serial.println(data);
     String weightS = data.substring(2, 11);
     String rfidS = data.substring(13, 22);
     unsigned long weight_tmp = weightS.toInt();
@@ -212,6 +216,12 @@ int read_values_from_other_arduino() {
     if(rfid > 0){
       Serial.println(rfid);
         last_rfid = rfid;
+        
+        for(int i = 0; i < 3; i++){
+            if(last_rfid == tools_rfid[i]){
+              tool_present[i] = !tool_present[i];
+            }
+        }
         //box.pushRFID(rfid);
         response = SENSOR_RESPONSE_RFID_VALUE;
     }
@@ -351,9 +361,34 @@ void active_menu() {
 }
 
 void rfid_menu() {
+
+    String item = "UNKNOWN";
     clear_display();
     reset_text();
-    display.print("RFID");
+    display.println("RFID");
+    display.println(last_rfid);
+    for(int i = 0; i < 3; i++){
+        if(last_rfid == user_rfid[i]){
+    display.print("User: ");
+    display.print( user_names[i]);
+            break;
+        }
+    }
+    for(int i = 0; i < 3; i++){
+        if(last_rfid == tools_rfid[i]){
+    display.print("Tool: ");
+    display.println( tools[i]);
+    if(tool_present[i]){
+      
+      display.print("Returned");
+    } else {
+      
+      display.print("Removed");
+    }
+            break;
+        }
+    }
+    //tool_present
     display.display();
 
     if ((millis() - menu_start) > 2000) {
@@ -373,10 +408,7 @@ void weight_menu() {
     }
 }
 
-String tools[] = {"Hammer", "Saw", "Tape"};
-unsigned long tool_weight[] = {300, 200, 80};
-bool tool_present[] ={true, false, true};
-unsigned long tools_rfid[] = {1,1,1};
+
 void main_menu_info_content() {
     clear_display();
     reset_text();
