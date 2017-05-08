@@ -55,7 +55,7 @@ unsigned long user_rfid[] = {294938465,1,1};
 String last_used_by = user_names[0];
 
 String tools[] = {"Hammer", "caliper", "Tape"};
-unsigned long tool_weight[] = {300, 8000, 80};
+unsigned long tool_weight[] = {300, 16000, 80};
 bool tool_present[] ={true, false, true};
 unsigned long tools_rfid[] = {19360,1,1};
 
@@ -470,7 +470,7 @@ void weight_menu() {
       
     } else if (prev_weight < weight){
       diff = weight - prev_weight;
-    display.print(diff);
+    display.print(diff/319);
     display.println("g added");
       
     }
