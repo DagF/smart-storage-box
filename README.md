@@ -10,3 +10,6 @@ NB! Requires https://github.com/esp8266/Arduino
 4. restart the arduino IDE
 
 The code for the esp is called "smart-storage"
+
+TODO: update to change template
+Rewrite text
