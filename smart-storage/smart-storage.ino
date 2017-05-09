@@ -51,13 +51,13 @@ int prev_menu = MENU_MAIN;
 #define SENSOR_RESPONSE_ACTIVE 3
 
 String user_names[] = {"Dag", "Sivert", "Thomesine"};
-unsigned long user_rfid[] = {294938465,1,1};
+unsigned long user_rfid[] = {294938465, 1, 1};
 String last_used_by = user_names[0];
 
 String tools[] = {"Hammer", "caliper", "Tape"};
 unsigned long tool_weight[] = {300, 16000, 80};
-bool tool_present[] ={true, false, true};
-unsigned long tools_rfid[] = {19360,1,1};
+bool tool_present[] = {true, false, true};
+unsigned long tools_rfid[] = {19360, 1, 1};
 
 
 static const unsigned char PROGMEM
@@ -182,7 +182,8 @@ void reset_text() {
 
 unsigned long weight = 0;
 unsigned long prev_weight = 0;
-unsigned long weights[50] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+unsigned long weights[50] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 int weight_counter = 0;
 unsigned long rfid = 0;
 unsigned long last_rfid = 0;
@@ -202,90 +203,85 @@ int read_values_from_other_arduino() {
     }
     String weightS = data.substring(2, 11);
     String rfidS = data.substring(13, 22);
-    
+
     unsigned long weight_tmp = weightS.toInt();
-      //Serial.print("tp ");
-      //Serial.println(weight_tmp);
-      //Serial.print("last ");
-      //Serial.println(weights[weight_counter]);
-                //Serial.println( weight_tmp);
-   if(millis() - last_weight_time > 100){
-    if(weight_counter < 10){
-      if(weight_counter == 0){
-        weights[weight_counter] = weight_tmp;
-      }else if( weight_tmp > weights[weight_counter-1]){
-            if((weight_tmp - weights[weight_counter-1]) > 1000){
-                // Serial.println("rese1t1");
-                // Serial.println(weight_tmp - weights[weight_counter]);
-               weight_counter  = 0;
-              }
-          }
-          else if(weights[weight_counter-1]> weight_tmp ){
-            
-            if((weights[weight_counter-1] - weight_tmp) > 1000){
-              //  Serial.println("reset2");
-               // Serial.println(weights[weight_counter-1] - weight_tmp);
-                weight_counter  = 0;
-              }
-          }
-        last_weight_time = millis();
-        weights[weight_counter] = weight_tmp;
-               // Serial.println( weights[weight_counter]);
-                //Serial.println( weight_tmp);
-        weight_counter++;
-    } else {
-        unsigned long sum_weight = 0;
-        for(int i = 0; i < 10; i++){
-            sum_weight = sum_weight + weights[i];
+    //Serial.print("tp ");
+    //Serial.println(weight_tmp);
+    //Serial.print("last ");
+    //Serial.println(weights[weight_counter]);
+    //Serial.println( weight_tmp);
+    if (millis() - last_weight_time > 100) {
+        if (weight_counter < 10) {
+            if (weight_counter == 0) {
+                weights[weight_counter] = weight_tmp;
+            } else if (weight_tmp > weights[weight_counter - 1]) {
+                if ((weight_tmp - weights[weight_counter - 1]) > 1000) {
+                    // Serial.println("rese1t1");
+                    // Serial.println(weight_tmp - weights[weight_counter]);
+                    weight_counter = 0;
+                }
+            } else if (weights[weight_counter - 1] > weight_tmp) {
+
+                if ((weights[weight_counter - 1] - weight_tmp) > 1000) {
+                    //  Serial.println("reset2");
+                    // Serial.println(weights[weight_counter-1] - weight_tmp);
+                    weight_counter = 0;
+                }
+            }
+            last_weight_time = millis();
+            weights[weight_counter] = weight_tmp;
+            // Serial.println( weights[weight_counter]);
+            //Serial.println( weight_tmp);
+            weight_counter++;
+        } else {
+            unsigned long sum_weight = 0;
+            for (int i = 0; i < 10; i++) {
+                sum_weight = sum_weight + weights[i];
+            }
+            weight_tmp = sum_weight / 10;
+            weight_counter = 0;
+            if (weight_tmp > weight && (weight_tmp - weight) > 1000 ||
+                weight_tmp < weight && (weight - weight_tmp) > 1000) {
+                //  Serial.println(weight);
+                // Serial.println(weight_tmp);
+                prev_weight = weight;
+                weight = weight_tmp;
+                unsigned long diff = 0;
+                if (prev_weight > weight) {
+                    diff = prev_weight - weight;
+                } else if (prev_weight < weight) {
+                    diff = weight - prev_weight;
+                }
+
+                for (int i = 0; i < 3; i++) {
+                    if (tool_weight[i] > diff - 1000 && tool_weight[i] < diff + 1000) {
+                        if (prev_weight > weight) {
+                            tool_present[i] = false;
+
+                        } else if (prev_weight < weight) {
+                            tool_present[i] = true;
+                        }
+
+                        break;
+                    }
+                }
+
+
+                response = SENSOR_RESPONSE_WEIGHT_CHANGED;
+                box.postWeight(weight);
+            }
+
         }
-        weight_tmp = sum_weight / 10;
-        weight_counter = 0;
-        if(weight_tmp > weight && (weight_tmp - weight) > 1000 || weight_tmp < weight && (weight-weight_tmp) > 1000){
-         //  Serial.println(weight);
-     // Serial.println(weight_tmp);
-          prev_weight = weight;
-            weight = weight_tmp;
-unsigned long diff = 0;
-    if(prev_weight > weight){
-       diff = prev_weight - weight;      
-    } else if (prev_weight < weight){
-      diff = weight - prev_weight;      
     }
-        
-        for(int i = 0; i < 3; i++){
-          if(tool_weight[i] > diff - 1000 && tool_weight[i] < diff + 1000 ){
-            if(prev_weight > weight){
-         tool_present[i] = false;
-        
-      } else if (prev_weight < weight){
-        tool_present[i] = true;
-      }
 
-            break; 
-          }
-        }
-      
-      
-      
-      
-
-
-            
-            response = SENSOR_RESPONSE_WEIGHT_CHANGED;
-            box.postWeight(weight);
-        }
-     
-    }
-   }
-    
     rfid = rfidS.toInt();
-    if(rfid > 0){
-      Serial.println(rfid);
+    if (rfid > 0) {
+        Serial.println(rfid);
         last_rfid = rfid;
-        
-        for(int i = 0; i < 3; i++){
-            if(last_rfid == tools_rfid[i]){
-              tool_present[i] = !tool_present[i];
+
+        for (int i = 0; i < 3; i++) {
+            if (last_rfid == tools_rfid[i]) {
+                tool_present[i] = !tool_present[i];
             }
         }
         box.postRFID(rfid);
@@ -351,17 +347,17 @@ void main_menu() {
                 case MENU_MAIN_OPTION_INFO_CONTENT:
                     prev_menu = current_menu;
                     current_menu = MENU_MAIN_INFO_CONTENT;
-       
+
                     break;
                 case MENU_MAIN_OPTION_INFO_USE:
                     prev_menu = current_menu;
                     current_menu = MENU_MAIN_INFO_USE;
-      
+
                     break;
                 case MENU_MAIN_OPTION_INFO_WEIGHT:
                     prev_menu = current_menu;
                     current_menu = MENU_MAIN_INFO_WEIGHT;
-        
+
                     break;
             }
             break;
@@ -398,7 +394,7 @@ void main_menu() {
     display.display();
 }
 
-int prev_menu_active =0;
+int prev_menu_active = 0;
 unsigned long menu_start = 0;
 
 void active_menu() {
@@ -419,24 +415,24 @@ void rfid_menu() {
     reset_text();
     display.println("RFID");
     display.println(last_rfid);
-    for(int i = 0; i < 3; i++){
-        if(last_rfid == user_rfid[i]){
-    display.print("User: ");
-    display.print( user_names[i]);
+    for (int i = 0; i < 3; i++) {
+        if (last_rfid == user_rfid[i]) {
+            display.print("User: ");
+            display.print(user_names[i]);
             break;
         }
     }
-    for(int i = 0; i < 3; i++){
-        if(last_rfid == tools_rfid[i]){
-    display.print("Tool: ");
-    display.println( tools[i]);
-    if(tool_present[i]){
-      
-      display.print("Returned");
-    } else {
-      
-      display.print("Removed");
-    }
+    for (int i = 0; i < 3; i++) {
+        if (last_rfid == tools_rfid[i]) {
+            display.print("Tool: ");
+            display.println(tools[i]);
+            if (tool_present[i]) {
+
+                display.print("Returned");
+            } else {
+
+                display.print("Removed");
+            }
             break;
         }
     }
@@ -462,28 +458,28 @@ void weight_menu() {
     reset_text();
     unsigned long diff = 0;
     display.println("weight");
-    if(prev_weight > weight){
-       diff = prev_weight - weight;
-    display.print(diff);
-    display.println("g removed");
-       
-      
-    } else if (prev_weight < weight){
-      diff = weight - prev_weight;
-    display.print(diff/319);
-    display.println("g added");
-      
+    if (prev_weight > weight) {
+        diff = prev_weight - weight;
+        display.print(diff);
+        display.println("g removed");
+
+
+    } else if (prev_weight < weight) {
+        diff = weight - prev_weight;
+        display.print(diff / 319);
+        display.println("g added");
+
     }
-    
-    if(diff > 2000){
-      
-      for(int i = 0; i < 3; i++){
-        if(tool_weight[i] > diff - 1000 && tool_weight[i] < diff + 1000 ){
-          
-          display.println(tools[i]);
-          break; 
+
+    if (diff > 2000) {
+
+        for (int i = 0; i < 3; i++) {
+            if (tool_weight[i] > diff - 1000 && tool_weight[i] < diff + 1000) {
+
+                display.println(tools[i]);
+                break;
+            }
         }
-      }
     }
     display.display();
     if ((millis() - menu_start) > 2000) {
@@ -498,8 +494,8 @@ void main_menu_info_content() {
     reset_text();
     display.print("Tools:");
     int ind = 1;
-    for(int i = 0; i < 3; i++){
-        if(tool_present[i]){
+    for (int i = 0; i < 3; i++) {
+        if (tool_present[i]) {
             display.setCursor(0, (ind) * 10);
             display.print(tools[i]);
             ind++;
@@ -537,7 +533,7 @@ void main_menu_info_use() {
     }
 }
 
-void main_menu_weight(){
+void main_menu_weight() {
 
     clear_display();
     reset_text();
@@ -549,6 +545,7 @@ void main_menu_weight(){
             break;
     }
 }
+
 void loop() {
     update_blink();
 //TODO loop til connected to wifi with text connecting to network
@@ -578,7 +575,7 @@ void loop() {
             main_menu();
             break;
         case MENU_MAIN_INFO_CONTENT:
-       
+
             main_menu_info_content();
             break;
         case MENU_MAIN_INFO_USE:
