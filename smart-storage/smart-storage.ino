@@ -1,50 +1,62 @@
+#include <Arduino.h>
 #include <SPI.h>
 #include <Wire.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
 
-//acc
-#include <SparkFun_ADXL345.h>
-
-ADXL345 adxl = ADXL345();
-
-#include <ESP8266WiFi.h>
-#include <ESP8266WiFiMulti.h>
-#include <ButtonRow.h>
-
-#include <SmartStorageBox.h>
-
-SmartStorageBox box("s002", "http://172.24.1.4:9000/api/");
+#include <Adafruit_GFX.h>       // display
+#include <Adafruit_SSD1306.h>   // display
 
 #define OLED_RESET 0
 Adafruit_SSD1306 display(OLED_RESET);
-//ok, back, up, down, reset(up + down)
+
+#include <SparkFun_ADXL345.h>   // Accelerometer
+
+ADXL345 adxl = ADXL345();       // create a new instance of accelerometer
+
+#include <ESP8266WiFi.h>        // ESP WiFi module
+#include <ESP8266WiFiMulti.h>   // ESP WiFi module
+
+ESP8266WiFiMulti WiFiMulti;
+
+
+// Setup of button row
+#include <ButtonRow.h>
+
 #define OK 0
 #define BACK 1
 #define UP 2
 #define DOWN 3
-#define RESET 4
-int buttonValues[] = {645, 997, 745, 955, 988};
-int size = sizeof(buttonValues) / sizeof(buttonValues[0]);
-int threshold = 10;
-ButtonRow buttonRow(A0, buttonValues, size, threshold);
+#define RESET 4 // up + down
+int analog_pin = A0;
+int button_values[] = {645, 997, 745, 955, 988};
+int size = sizeof(button_values) / sizeof(button_values[0]);
+ButtonRow buttonRow(analog_pin, button_values, size);
 
+// setup of Smart Storage Box
+#include <SmartStorageBox.h>
+
+String box_name = "s002";
+Sting host = "http://172.24.1.4:9000/api/";
+SmartStorageBox box(box_name, host);
+
+/**
+ * Constants used to know what menu to display
+ */
 bool popup_active = false;
-
 #define MENU_MAIN  1
-#define MENU_RFID  2
-#define MENU_WEIGHT 3
-#define MENU_INFO_CONTENT  4
-#define MENU_INFO_USE  5
-#define MENU_ACTIVE  6
-#define MENU_MAIN_INFO_CONTENT 7
-#define MENU_MAIN_INFO_USE 8
-#define MENU_MAIN_INFO_WEIGHT 9
-
+#define MENU_MAIN_INFO_CONTENT 2
+#define MENU_MAIN_INFO_USE 3
+#define MENU_MAIN_INFO_WEIGHT 4
+#define MENU_RFID  10
+#define MENU_WEIGHT 11
+#define MENU_ACTIVE  12
 int current_menu = MENU_MAIN;
 int prev_menu = MENU_MAIN;
 
-
+/**
+ * Constants used to know what sensor value was updated
+ * The sensor values are stored in global values so then asking for updates from the sensor only what sensor was
+ * updated is provided
+ */
 #define SENSOR_RESPONSE_NO_VALUE  0
 #define SENSOR_RESPONSE_WEIGHT_CHANGED  1
 #define SENSOR_RESPONSE_RFID_VALUE  2
@@ -154,7 +166,6 @@ void init_display() {
     display.display();
 }
 
-ESP8266WiFiMulti WiFiMulti;
 
 void init_wifi() {
     WiFiMulti.addAP("smart-storage", "smart-storage");
@@ -182,114 +193,161 @@ void reset_text() {
 
 unsigned long weight = 0;
 unsigned long prev_weight = 0;
-unsigned long weights[50] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+unsigned long weights[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 int weight_counter = 0;
 unsigned long rfid = 0;
 unsigned long last_rfid = 0;
 unsigned long last_weight_time = 0;
+int weight_reading_delay = 100;
+// TODO: split threshold into reading change and weightchange
+int weight_change_threshold = 1000;
 
-int read_values_from_other_arduino() {
-    int response = SENSOR_RESPONSE_NO_VALUE;
-    Wire.beginTransmission(9);
-    Wire.write(0);
-    Wire.endTransmission();
-    //Serial.println("Receive data");
-    Wire.requestFrom(9, 22);
-    String data = "";
-    while (Wire.available()) {
-        char b = Wire.read();
-        data += b;
+bool time_for_new_weight_reading() {
+    return (millis() - last_weight_time > weight_reading_delay);
+}
+
+bool more_readings_left() {
+    return (weight_counter < 10);
+}
+
+bool first_reading() {
+    return (weight_counter != 0);
+}
+
+bool changes_bigger_than_threshold(unsigned long weight_tmp) {
+    bool changes_bigger_than_threshold = false;
+    if (weight_tmp > weights[weight_counter - 1]) {
+        if ((weight_tmp - weights[weight_counter - 1]) > weight_change_threshold) {
+            changes_bigger_than_threshold = true;
+        }
+    } else {
+        if ((weights[weight_counter - 1] - weight_tmp) > weight_change_threshold) {
+            changes_bigger_than_threshold = true;
+        }
     }
-    String weightS = data.substring(2, 11);
-    String rfidS = data.substring(13, 22);
+    return changes_bigger_than_threshold;
+}
 
-    unsigned long weight_tmp = weightS.toInt();
-    //Serial.print("tp ");
-    //Serial.println(weight_tmp);
-    //Serial.print("last ");
-    //Serial.println(weights[weight_counter]);
-    //Serial.println( weight_tmp);
-    if (millis() - last_weight_time > 100) {
-        if (weight_counter < 10) {
-            if (weight_counter == 0) {
-                weights[weight_counter] = weight_tmp;
-            } else if (weight_tmp > weights[weight_counter - 1]) {
-                if ((weight_tmp - weights[weight_counter - 1]) > 1000) {
-                    // Serial.println("rese1t1");
-                    // Serial.println(weight_tmp - weights[weight_counter]);
-                    weight_counter = 0;
-                }
-            } else if (weights[weight_counter - 1] > weight_tmp) {
+unsigned long sum_weight_readings() {
+    unsigned long sum_weight = 0;
+    for (int i = 0; i < 10; i++) {
+        sum_weight = sum_weight + weights[i];
+    }
+    weight_counter = 0;
+    return sum_weight / 10;
+}
 
-                if ((weights[weight_counter - 1] - weight_tmp) > 1000) {
-                    //  Serial.println("reset2");
-                    // Serial.println(weights[weight_counter-1] - weight_tmp);
+void change_tool_status_baes_on_weight() {
+    unsigned long diff = 0;
+    if (prev_weight > weight) {
+        diff = prev_weight - weight;
+    } else if (prev_weight < weight) {
+        diff = weight - prev_weight;
+    }
+
+    for (int i = 0; i < 3; i++) {
+        if (tool_weight[i] > diff - weight_change_threshold &&
+            tool_weight[i] < diff + weight_change_threshold) {
+            if (prev_weight > weight) {
+                tool_present[i] = false;
+            } else if (prev_weight < weight) {
+                tool_present[i] = true;
+            }
+            break;
+        }
+    }
+}
+
+/**
+ * Method interpreting weight
+ *
+ * 10 Values are stored and the average of those values are counted as the new value.
+ * If to values directly after each other have a bigger difference than 1000 the list of values are reset
+ * and 10 new values are stored. Readings are done each 100 ms so it takes 1 second to read a new weight value.
+ *
+ * Only changes that are bigger than 1000 are registered as weight change
+ *
+ * @param weight_tmp
+ * @return SENSOR_RESPONSE
+ */
+int interpret_weight(unsigned long weight_tmp) {
+    int response = SENSOR_RESPONSE_NO_VALUE;
+    //
+    if (time_for_new_weight_reading()) {
+        if (more_readings_left()) {
+            if (first_reading()) {
+                if (changes_bigger_than_threshold(weight_tmp)) {
                     weight_counter = 0;
                 }
             }
             last_weight_time = millis();
             weights[weight_counter] = weight_tmp;
-            // Serial.println( weights[weight_counter]);
-            //Serial.println( weight_tmp);
             weight_counter++;
         } else {
-            unsigned long sum_weight = 0;
-            for (int i = 0; i < 10; i++) {
-                sum_weight = sum_weight + weights[i];
-            }
-            weight_tmp = sum_weight / 10;
-            weight_counter = 0;
-            if (weight_tmp > weight && (weight_tmp - weight) > 1000 ||
-                weight_tmp < weight && (weight - weight_tmp) > 1000) {
-                //  Serial.println(weight);
-                // Serial.println(weight_tmp);
+            weight_tmp = sum_weight_readings();
+            if (weight_tmp > weight && (weight_tmp - weight) > weight_change_threshold ||
+                weight_tmp < weight && (weight - weight_tmp) > weight_change_threshold) {
                 prev_weight = weight;
                 weight = weight_tmp;
-                unsigned long diff = 0;
-                if (prev_weight > weight) {
-                    diff = prev_weight - weight;
-                } else if (prev_weight < weight) {
-                    diff = weight - prev_weight;
-                }
 
-                for (int i = 0; i < 3; i++) {
-                    if (tool_weight[i] > diff - 1000 && tool_weight[i] < diff + 1000) {
-                        if (prev_weight > weight) {
-                            tool_present[i] = false;
-
-                        } else if (prev_weight < weight) {
-                            tool_present[i] = true;
-                        }
-
-                        break;
-                    }
-                }
-
-
+                change_tool_status_baes_on_weight();
                 response = SENSOR_RESPONSE_WEIGHT_CHANGED;
                 box.postWeight(weight);
             }
 
         }
     }
+}
 
-    rfid = rfidS.toInt();
+/**
+ * Method interpreting rfid data.
+ *
+ * Checks if RFID value was read and updates the status of a tool
+ * @param rfid
+ * @return SENSOR_RESPONSE
+ */
+int interpret_rfid(unsigned long rfid) {
+    int response = SENSOR_RESPONSE_NO_VALUE;
     if (rfid > 0) {
-        Serial.println(rfid);
         last_rfid = rfid;
-
+        // TODO: change 3 to size of tool array
         for (int i = 0; i < 3; i++) {
             if (last_rfid == tools_rfid[i]) {
+                // Removes adds the tool to the  box
                 tool_present[i] = !tool_present[i];
             }
         }
         box.postRFID(rfid);
         response = SENSOR_RESPONSE_RFID_VALUE;
     }
+    return response;
+}
+
+int read_values_from_other_arduino() {
+    int response = SENSOR_RESPONSE_NO_VALUE;
+
+    Wire.requestFrom(9, 22);
+    String data = "";
+    while (Wire.available()) {
+        char b = Wire.read();
+        data += b;
+    }
+
+    //wxxxxxxxxxrxxxxxxxxxxx
+    //Weight as 9 bytes
+    //RFID as 9 bytes
+    String weightS = data.substring(2, 11); //
+    String rfidS = data.substring(13, 22);
+
+    unsigned long weight_tmp = weightS.toInt();
+    response = interpret_weight(weight_tmp);
+
+    rfid = rfidS.toInt();
+    response = interpret_rfid(rfid);
 
     return response;
 }
+
 
 /***
  * Reads if box is acctive
@@ -300,7 +358,7 @@ unsigned long last_active = millis();
 
 int read_acc() {
     int response = SENSOR_RESPONSE_NO_VALUE;
-    if (aks_get()) {
+    if (get_acc()) {
         if ((WiFiMulti.run() == WL_CONNECTED)) {
             box.postActivity();
         }
@@ -339,7 +397,6 @@ void main_menu() {
     reset_text();
 
 
-//TODO move code for better button click feeling into library with delay in cycles as input
     switch (buttonRow.getPushedButton()) {
         case OK:
             blink(GREEN_LEDS, 5, 100);
@@ -397,6 +454,10 @@ void main_menu() {
 int prev_menu_active = 0;
 unsigned long menu_start = 0;
 
+/**
+ * Popup menu displaying activity
+ * TODO: rename to popup
+ */
 void active_menu() {
     clear_display();
     reset_text();
@@ -408,6 +469,10 @@ void active_menu() {
     }
 }
 
+/**
+ * Popup menu displaying rfid reads
+ * TODO: rename to popup
+ */
 void rfid_menu() {
 
     String item = "UNKNOWN";
@@ -446,13 +511,10 @@ void rfid_menu() {
 }
 
 
-/*
-
-String tools[] = {"Hammer", "caliper", "Tape"};
-unsigned long tool_weight[] = {300, 8000, 80};
-bool tool_present[] ={true, true, true};
-unsigned long tools_rfid[] = {19360,1,1};
-*/
+/**
+ * Popup menu displaying weight changes
+ * TODO: rename to popup
+ */
 void weight_menu() {
     clear_display();
     reset_text();
@@ -462,17 +524,12 @@ void weight_menu() {
         diff = prev_weight - weight;
         display.print(diff);
         display.println("g removed");
-
-
     } else if (prev_weight < weight) {
         diff = weight - prev_weight;
         display.print(diff / 319);
         display.println("g added");
-
     }
-
-    if (diff > 2000) {
-
+    if (diff > 1000) {
         for (int i = 0; i < 3; i++) {
             if (tool_weight[i] > diff - 1000 && tool_weight[i] < diff + 1000) {
 
@@ -488,7 +545,9 @@ void weight_menu() {
     }
 }
 
-
+/**
+ * Menu displaying info about what is stored in the box
+ */
 void main_menu_info_content() {
     clear_display();
     reset_text();
@@ -509,6 +568,9 @@ void main_menu_info_content() {
     }
 }
 
+/**
+ * Menu displaying use information
+ */
 void main_menu_info_use() {
     clear_display();
     reset_text();
@@ -533,8 +595,10 @@ void main_menu_info_use() {
     }
 }
 
+/**
+ * Menu displaying the analog value of the values read
+ */
 void main_menu_weight() {
-
     clear_display();
     reset_text();
     display.print(weight);
@@ -548,7 +612,7 @@ void main_menu_weight() {
 
 void loop() {
     update_blink();
-//TODO loop til connected to wifi with text connecting to network
+    //TODO loop til connected to wifi with text connecting to network
 
     int sensor_response = manage_sensors();
     if (sensor_response != SENSOR_RESPONSE_NO_VALUE) {
@@ -599,7 +663,7 @@ void loop() {
 
 }
 
-boolean aks_get() {
+bool get_acc() {
     // getInterruptSource clears all triggered actions after returning value
     // Do not call again until you need to recheck for triggered actions
 
@@ -685,13 +749,24 @@ void init_acc() {
     adxl.singleTapINT(1);
 }
 
-
+/*
+ * Blink function implemented using millis instead of delay to provide a none-blocking blinking function.
+ * TODO extract to library
+ * TODO can only blink on output pin at a time
+ * */
 int blink_color = 0;
 int blinks_left = 0;
 int blink_count = 0;
 int blink_delay = 0;
 unsigned long blink_start = 0;
 
+/**
+ * Method for initiating blinking
+ *
+ * @param pin
+ * @param times How many times it should blink
+ * @param d delay
+ */
 void blink(int pin, int times, int d) {
     blink_color = pin;
     blinks_left = times;
@@ -700,11 +775,12 @@ void blink(int pin, int times, int d) {
     blink_start = millis();
 }
 
+/**
+ * Method called to update the blinking
+ */
 void update_blink() {
     unsigned long now = millis();
     if (blinks_left > 0) {
-
-
         if (((blink_count * 2) * blink_delay) < (now - blink_start)) {
             digitalWrite(blink_color, HIGH);
             blink_count++;
@@ -712,7 +788,6 @@ void update_blink() {
         } else if (((blink_count * 2 - 1) * blink_delay) < (now - blink_start)) {
             digitalWrite(blink_color, LOW);
         }
-
     } else {
         digitalWrite(blink_color, LOW);
     }
