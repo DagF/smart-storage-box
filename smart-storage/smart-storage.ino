@@ -35,7 +35,7 @@ ButtonRow buttonRow(analog_pin, button_values, size);
 #include <SmartStorageBox.h>
 
 String box_name = "s002";
-Sting host = "http://172.24.1.4:9000/api/";
+String host = "http://172.24.1.4:9000/api/";
 SmartStorageBox box(box_name, host);
 
 /**
@@ -294,9 +294,9 @@ int interpret_weight(unsigned long weight_tmp) {
                 response = SENSOR_RESPONSE_WEIGHT_CHANGED;
                 box.postWeight(weight);
             }
-
         }
     }
+    return response;
 }
 
 /**
@@ -343,8 +343,10 @@ int read_values_from_other_arduino() {
     response = interpret_weight(weight_tmp);
 
     rfid = rfidS.toInt();
-    response = interpret_rfid(rfid);
-
+    int tmp_response = interpret_rfid(rfid);
+    if(tmp_response > response){
+      response = tmp_response;  
+    }
     return response;
 }
 
@@ -522,7 +524,7 @@ void weight_menu() {
     display.println("weight");
     if (prev_weight > weight) {
         diff = prev_weight - weight;
-        display.print(diff);
+        display.print(diff / 319);
         display.println("g removed");
     } else if (prev_weight < weight) {
         diff = weight - prev_weight;
